@@ -1,19 +1,18 @@
-import argparse
 import dataclasses
-import os
-
+import numpy as np
 import torch
-from torch import distributed
 import torch.nn as nn
 from torch.utils import data
 import torchvision
 
 
-def ddp_setup(rank, world_size):
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "7777"
-    distributed.init_process_group("nccl", rank=rank, world_size=world_size)
-    torch.cuda.set_device(rank)
+# class SimpleModel(nn.Module):
+
+#     def __init__(self):
+#         self.linear1 = nn.ModuleDict()
+#         nn.Linear(28*28, 256)
+#         self.
+#         self.linear2 = nn.Linear(256, 10)
 
 
 @dataclasses.dataclass
@@ -23,9 +22,7 @@ class DefaultConfig:
     log_steps: int = 100
 
 
-def main(rank, world_size, is_distributed):
-    if is_distributed:
-        ddp_setup(rank, world_size)
+def main():
     device = (
         "cuda"
         if torch.cuda.is_available()
@@ -54,19 +51,13 @@ def main(rank, world_size, is_distributed):
         transform=torchvision.transforms.ToTensor(),
         download=True,
     )
-    sampler = data.DistributedSampler(train_dataset) if is_distributed else None
     train_dataloader = data.DataLoader(
-        train_dataset,
-        batch_size=config.batch_size,
-        shuffle=True,
-        sampler=sampler,
+        train_dataset, batch_size=config.batch_size, shuffle=True
     )
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(simple_model.parameters(), lr=1e-3)
     iters = 0
-    for epoch in range(config.num_epochs):
-        if is_distributed:
-            train_dataloader.sampler.set_epoch(epoch)
+    for i in range(config.num_epochs):
         for X, y in train_dataloader:
             X, y = X.to(device), y.to(device)
             preds = simple_model(X)
@@ -75,20 +66,9 @@ def main(rank, world_size, is_distributed):
             loss.backward()
             optimizer.step()
             if iters % config.log_steps == 0:
-                print(f"Epoch: {epoch} \t Loss: {round(loss.item(), 3)}")
+                print(f"Epoch: {i} \t Loss: {round(loss.item(), 3)}")
             iters += 1
-    if is_distributed:
-        distributed.destroy_process_group()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--distributed", action="store_true", default=False)
-    args = parser.parse_args()
-    if args.distributed:
-        world_size = torch.cuda.device_count()
-        torch.multiprocessing.spawn(
-            main, args=(world_size, args.distributed), nprocs=world_size
-        )
-    else:
-        main(rank=None, world_size=None, is_distributed=args.distributed)
+    main()
