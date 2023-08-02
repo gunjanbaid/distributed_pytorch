@@ -20,7 +20,7 @@ def ddp_setup(rank, world_size):
 class DefaultConfig:
     batch_size: int = 2048
     num_epochs: int = 1000
-    log_steps: int = 100
+    log_steps: int = 10
 
 
 def main(rank, world_size, is_distributed):
@@ -55,10 +55,11 @@ def main(rank, world_size, is_distributed):
         download=True,
     )
     sampler = data.DistributedSampler(train_dataset) if is_distributed else None
+    shuffle = False if is_distributed else True
     train_dataloader = data.DataLoader(
         train_dataset,
         batch_size=config.batch_size,
-        shuffle=True,
+        shuffle=shuffle,
         sampler=sampler,
     )
     loss_fn = nn.CrossEntropyLoss()
@@ -75,7 +76,13 @@ def main(rank, world_size, is_distributed):
             loss.backward()
             optimizer.step()
             if iters % config.log_steps == 0:
-                print(f"Epoch: {epoch} \t Loss: {round(loss.item(), 3)}")
+                log_line = (
+                    f"Epoch: {epoch} \t Train data size: {len(train_dataloader)} \t"
+                    f"Batch size: {len(X)} \t Loss: {round(loss.item(), 3)}"
+                )
+                if is_distributed:
+                    log_line = f"GPU ID: {rank} \t " + log_line
+                print(log_line)
             iters += 1
     if is_distributed:
         distributed.destroy_process_group()
